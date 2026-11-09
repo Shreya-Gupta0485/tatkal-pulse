@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IRCTC Tatkal Engine // Atomic 1-Seat Allocation</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Palette: Royal Blue & Crisp White */
+            --bg-blue-dark: #07192f;
+            --irctc-royal: #0a4d8c;
+            --irctc-bright-blue: #0066cc;
+            --irctc-light-blue: #e8f2fc;
+            --pure-white: #ffffff;
+            --card-white: #ffffff;
+            --text-dark: #0f172a;
+            --text-muted: #64748b;
+            --cnf-green: #059669;
+            --regret-red: #dc2626;
+            --border-light: #e2e8f0;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+
+        body {
+            background-color: var(--bg-blue-dark);
+            background-image: 
+                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0, 102, 204, 0.4), transparent),
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 100% 100%, 30px 30px, 30px 30px;
+            color: var(--pure-white);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 30px 16px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .badge-rail {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--pure-white);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 6px 14px;
+            border-radius: 999px;
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 12px;
+        }
+
+        .pulse-dot {
+            width: 7px;
+            height: 7px;
+            background: #38bdf8;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #38bdf8;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        .title {
+            font-size: 34px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+
+        .title span.blue {
+            color: #38bdf8;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #94a3b8;
+            margin-top: 4px;
+        }
+
+        /* Container */
+        .container {
+            width: 100%;
+            max-width: 900px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* White Train Card */
+        .train-card {
+            background: var(--pure-white);
+            color: var(--text-dark);
+            border-radius: 16px;
+            padding: 22px 26px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+        }
+
+        .train-name {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--irctc-royal);
+        }
+
+        .train-route {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 3px;
+            font-weight: 500;
+        }
+
+        .seats-pill {
+            background: #fee2e2;
+            border: 1px solid #fca5a5;
+            color: var(--regret-red);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            font-weight: 800;
+            padding: 8px 16px;
+            border-radius: 10px;
+            display: inline-block;
+        }
+
+        /* Two User Battle Grid */
+        .battle-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .battle-grid { grid-template-columns: 1fr; }
+        }
+
+        .user-card {
+            background: var(--pure-white);
+            color: var(--text-dark);
+            border-radius: 16px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+        }
+
+        .user-tag {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--irctc-bright-blue);
+            text-transform: uppercase;
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 6px;
+        }
+
+        .input-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .passenger-input {
+            width: 100%;
+            padding: 12px 14px;
+            background: #f8fafc;
+            border: 1px solid var(--border-light);
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 16px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .passenger-input:focus {
+            border-color: var(--irctc-bright-blue);
+            background: #ffffff;
+        }
+
+        .btn-individual {
+            width: 100%;
+            padding: 14px;
+            background: var(--irctc-bright-blue);
+            color: var(--pure-white);
+            font-size: 14px;
+            font-weight: 700;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-individual:hover {
+            background: var(--irctc-royal);
+            transform: translateY(-2px);
+        }
+
+        .result-box {
+            margin-top: 16px;
+            padding: 14px;
+            border-radius: 10px;
+            font-size: 13px;
+            display: none;
+            line-height: 1.5;
+        }
+
+        .cnf {
+            background: #ecfdf5;
+            border: 1px solid #6ee7b7;
+            color: var(--cnf-green);
+        }
+
+        .regret {
+            background: #fef2f2;
+            border: 1px solid #fca5a5;
+            color: var(--regret-red);
+        }
+
+        /* Race Action Central Strip */
+        .clash-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 16px;
+            padding: 22px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(20px);
+        }
+
+        .clash-info h4 {
+            font-size: 16px;
+            color: var(--pure-white);
+        }
+
+        .clash-info p {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+
+        .btn-clash {
+            padding: 14px 28px;
+            background: #ffffff;
+            color: var(--irctc-royal);
+            font-size: 13px;
+            font-weight: 800;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            box-shadow: 0 8px 25px rgba(255, 255, 255, 0.2);
+            transition: all 0.2s;
+        }
+
+        .btn-clash:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(255, 255, 255, 0.35);
+        }
+
+        .btn-reset {
+            padding: 14px 20px;
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: var(--pure-white);
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-reset:hover {
+            border-color: #38bdf8;
+            color: #38bdf8;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="badge-rail">
+            <span class="pulse-dot"></span>
+            INDIAN RAILWAYS ATOMIC ENGINE • SUB-15MS
+        </div>
+        <h1 class="title">Tatkal <span class="blue">Race Condition</span> Simulation</h1>
+        <p class="subtitle">1 Available Seat • 2 Users • Exact 10:00:00 AM Concurrency Test</p>
+    </div>
+
+    <div class="container">
+        <!-- White Train Card -->
+        <div class="train-card">
+            <div>
+                <div class="train-name">22436 / VANDE BHARAT EXP</div>
+                <div class="train-route">New Delhi (NDLS) ➔ Varanasi (BSB) | Executive Class (EC)</div>
+            </div>
+            <div>
+                <span class="seats-pill">🚨 EXACTLY 1 SEAT LEFT</span>
+            </div>
+        </div>
+
+        <!-- 2 Passenger Cards (Editable Names!) -->
+        <div class="battle-grid">
+            <!-- Passenger 1 -->
+            <div class="user-card">
+                <div>
+                    <div class="user-tag">PASSENGER #1</div>
+                    <label class="input-label">Enter Passenger Name:</label>
+                    <input type="text" class="passenger-input" id="pass1" value="Rohan Sharma">
+                </div>
+                <button class="btn-individual" onclick="bookSingle('pass1', 'res1')">BOOK FOR PASSENGER #1 🚄</button>
+                <div class="result-box" id="res1"></div>
+            </div>
+
+            <!-- Passenger 2 -->
+            <div class="user-card">
+                <div>
+                    <div class="user-tag">PASSENGER #2</div>
+                    <label class="input-label">Enter Passenger Name:</label>
+                    <input type="text" class="passenger-input" id="pass2" value="Priya Patel">
+                </div>
+                <button class="btn-individual" onclick="bookSingle('pass2', 'res2')">BOOK FOR PASSENGER #2 🚄</button>
+                <div class="result-box" id="res2"></div>
+            </div>
+        </div>
+
+        <!-- Central Race Clash Action (Promise.all for Exact Same Millisecond!) -->
+        <div class="clash-card">
+            <div class="clash-info">
+                <h4>Simulate 10:00:00 AM Simultaneous Click</h4>
+                <p>Sends both requests across parallel sockets at the exact same microsecond!</p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-clash" onclick="triggerSimultaneousClash()">
+                    ⚡ BOTH CLICK AT ONCE!
+                </button>
+                <button class="btn-reset" onclick="resetTatkalQuota()">
+                    🔄 RESET SEAT (1)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function sendBookingRequest(passengerName, resultDivId) {
+            const div = document.getElementById(resultDivId);
+            div.style.display = "block";
+            div.className = "result-box";
+            div.innerHTML = "<em>Sending Tatkal Request to Redis Lua...</em>";
+
+            const t0 = performance.now();
+            try {
+                const res = await fetch("http://localhost:8081/api/v1/book", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ train_no: "22436", passenger: passengerName })
+                });
+
+                const latency = (performance.now() - t0).toFixed(2);
+                const data = await res.json();
+
+                if (res.status === 200) {
+                    div.className = "result-box cnf";
+                    div.innerHTML = `
+                        <strong>${data.message}</strong><br>
+                        Passenger: <strong>${data.passenger}</strong><br>
+                        Berth: <strong>${data.berth}</strong><br>
+                        PNR: <code>${data.pnr}</code><br>
+                        <small style="color: #047857;">⚡ Response Latency: ${latency} ms</small>
+                    `;
+                } else {
+                    div.className = "result-box regret";
+                    div.innerHTML = `
+                        <strong>${data.message}</strong><br>
+                        Passenger: <strong>${data.passenger}</strong><br>
+                        Status: <strong>${data.status}</strong><br>
+                        <small style="color: #b91c1c;">⚡ Response Latency: ${latency} ms</small>
+                    `;
+                }
+            } catch (err) {
+                div.className = "result-box regret";
+                div.innerHTML = "<strong>Error:</strong> Ensure server is running on :8081";
+            }
+        }
+
+        // Single manual click
+        function bookSingle(inputId, resultDivId) {
+            const name = document.getElementById(inputId).value.trim();
+            if (!name) { alert("Please enter a passenger name!"); return; }
+            sendBookingRequest(name, resultDivId);
+        }
+
+        // ⚡ THE EXACT SAME MILLISECOND CLASH:
+        // Promise.all fires both network requests simultaneously!
+        function triggerSimultaneousClash() {
+            const p1 = document.getElementById("pass1").value.trim();
+            const p2 = document.getElementById("pass2").value.trim();
+
+            if (!p1 || !p2) {
+                alert("Please fill both passenger names!");
+                return;
+            }
+
+            // Both requests fired in parallel at the EXACT SAME INSTANT
+            Promise.all([
+                sendBookingRequest(p1, 'res1'),
+                sendBookingRequest(p2, 'res2')
+            ]);
+        }
+
+        // Reset Quota back to 1 seat
+        async function resetTatkalQuota() {
+            try {
+                await fetch("http://localhost:8081/api/v1/reset", { method: "POST" });
+                document.getElementById("res1").style.display = "none";
+                document.getElementById("res2").style.display = "none";
+                alert("✅ Tatkal Quota successfully reset to 1 seat!");
+            } catch (e) {
+                alert("Failed to reset quota.");
+            }
+        }
+    </script>
+</body>
+</html>
