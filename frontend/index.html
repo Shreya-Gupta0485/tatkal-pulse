@@ -160,15 +160,7 @@
             color: var(--irctc-bright-blue);
             text-transform: uppercase;
             font-family: 'JetBrains Mono', monospace;
-            margin-bottom: 6px;
-        }
-
-        .input-label {
-            font-size: 12px;
-            font-weight: 700;
-            color: var(--text-muted);
-            margin-bottom: 6px;
-            display: block;
+            margin-bottom: 10px;
         }
 
         .passenger-input {
@@ -183,6 +175,11 @@
             margin-bottom: 16px;
             outline: none;
             transition: border-color 0.2s;
+        }
+
+        .passenger-input::placeholder {
+            color: #94a3b8;
+            font-weight: 500;
         }
 
         .passenger-input:focus {
@@ -312,14 +309,13 @@
             </div>
         </div>
 
-        <!-- 2 Passenger Cards (Editable Names!) -->
+        <!-- 2 Passenger Cards (Editable Names, no default value, no label) -->
         <div class="battle-grid">
             <!-- Passenger 1 -->
             <div class="user-card">
                 <div>
                     <div class="user-tag">PASSENGER #1</div>
-                    <label class="input-label">Enter Passenger Name:</label>
-                    <input type="text" class="passenger-input" id="pass1" value="Rohan Sharma">
+                    <input type="text" class="passenger-input" id="pass1" placeholder="Enter Passenger Name" autocomplete="off">
                 </div>
                 <button class="btn-individual" onclick="bookSingle('pass1', 'res1')">BOOK FOR PASSENGER #1 🚄</button>
                 <div class="result-box" id="res1"></div>
@@ -329,8 +325,7 @@
             <div class="user-card">
                 <div>
                     <div class="user-tag">PASSENGER #2</div>
-                    <label class="input-label">Enter Passenger Name:</label>
-                    <input type="text" class="passenger-input" id="pass2" value="Priya Patel">
+                    <input type="text" class="passenger-input" id="pass2" placeholder="Enter Passenger Name" autocomplete="off">
                 </div>
                 <button class="btn-individual" onclick="bookSingle('pass2', 'res2')">BOOK FOR PASSENGER #2 🚄</button>
                 <div class="result-box" id="res2"></div>
