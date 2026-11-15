@@ -291,10 +291,10 @@
     <div class="header">
         <div class="badge-rail">
             <span class="pulse-dot"></span>
-            INDIAN RAILWAYS ATOMIC ENGINE • SUB-15MS
+            INDIAN RAILWAYS ATOMIC ENGINE • LOCALHOST DEMO
         </div>
         <h1 class="title">Tatkal <span class="blue">Race Condition</span> Simulation</h1>
-        <p class="subtitle">1 Available Seat • 2 Users • Exact 10:00:00 AM Concurrency Test</p>
+        <p class="subtitle">1 Available Seat • 2 Users • Concurrency Test</p>
     </div>
 
     <div class="container">
@@ -305,7 +305,7 @@
                 <div class="train-route">New Delhi (NDLS) ➔ Varanasi (BSB) | Executive Class (EC)</div>
             </div>
             <div>
-                <span class="seats-pill">🚨 EXACTLY 1 SEAT LEFT</span>
+                <span class="seats-pill">🚨 1-SEAT DEMO</span>
             </div>
         </div>
 
@@ -332,11 +332,11 @@
             </div>
         </div>
 
-        <!-- Central Race Clash Action (Promise.all for Exact Same Millisecond!) -->
+        <!-- Central Race Clash Action -->
         <div class="clash-card">
             <div class="clash-info">
-                <h4>Simulate 10:00:00 AM Simultaneous Click</h4>
-                <p>Sends both requests across parallel sockets at the exact same microsecond!</p>
+                <h4>Simulate Simultaneous Click</h4>
+                <p>Fires both requests together using Promise.all.</p>
             </div>
             <div style="display: flex; gap: 10px;">
                 <button class="btn-clash" onclick="triggerSimultaneousClash()">
@@ -350,15 +350,37 @@
     </div>
 
     <script>
+        // Builds the result box using textContent (safe: user input is never parsed as HTML)
+        function renderResult(div, cssClass, lines, latency, color) {
+            div.className = "result-box " + cssClass;
+            div.textContent = "";
+
+            lines.forEach(function (line) {
+                const row = document.createElement("div");
+                if (line.label) {
+                    row.appendChild(document.createTextNode(line.label + ": "));
+                }
+                const strong = document.createElement("strong");
+                strong.textContent = line.value;
+                row.appendChild(strong);
+                div.appendChild(row);
+            });
+
+            const small = document.createElement("small");
+            small.style.color = color;
+            small.textContent = "⚡ Response Latency: " + latency + " ms";
+            div.appendChild(small);
+        }
+
         async function sendBookingRequest(passengerName, resultDivId) {
             const div = document.getElementById(resultDivId);
             div.style.display = "block";
             div.className = "result-box";
-            div.innerHTML = "<em>Sending Tatkal Request to Redis Lua...</em>";
+            div.textContent = "Sending Tatkal request to Redis Lua...";
 
             const t0 = performance.now();
             try {
-                const res = await fetch("http://localhost:8081/api/v1/book", {
+                const res = await fetch("/api/v1/book", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ train_no: "22436", passenger: passengerName })
@@ -368,26 +390,22 @@
                 const data = await res.json();
 
                 if (res.status === 200) {
-                    div.className = "result-box cnf";
-                    div.innerHTML = `
-                        <strong>${data.message}</strong><br>
-                        Passenger: <strong>${data.passenger}</strong><br>
-                        Berth: <strong>${data.berth}</strong><br>
-                        PNR: <code>${data.pnr}</code><br>
-                        <small style="color: #047857;">⚡ Response Latency: ${latency} ms</small>
-                    `;
+                    renderResult(div, "cnf", [
+                        { value: data.message },
+                        { label: "Passenger", value: data.passenger },
+                        { label: "Berth", value: data.berth },
+                        { label: "PNR", value: data.pnr }
+                    ], latency, "#047857");
                 } else {
-                    div.className = "result-box regret";
-                    div.innerHTML = `
-                        <strong>${data.message}</strong><br>
-                        Passenger: <strong>${data.passenger}</strong><br>
-                        Status: <strong>${data.status}</strong><br>
-                        <small style="color: #b91c1c;">⚡ Response Latency: ${latency} ms</small>
-                    `;
+                    renderResult(div, "regret", [
+                        { value: data.message || data.error || "Request failed" },
+                        { label: "Passenger", value: data.passenger || passengerName },
+                        { label: "Status", value: data.status || ("HTTP " + res.status) }
+                    ], latency, "#b91c1c");
                 }
             } catch (err) {
                 div.className = "result-box regret";
-                div.innerHTML = "<strong>Error:</strong> Ensure server is running on :8081";
+                div.textContent = "Error: Ensure server is running on :8081";
             }
         }
 
@@ -398,8 +416,7 @@
             sendBookingRequest(name, resultDivId);
         }
 
-        // ⚡ THE EXACT SAME MILLISECOND CLASH:
-        // Promise.all fires both network requests simultaneously!
+        // Promise.all starts both requests together
         function triggerSimultaneousClash() {
             const p1 = document.getElementById("pass1").value.trim();
             const p2 = document.getElementById("pass2").value.trim();
@@ -409,17 +426,16 @@
                 return;
             }
 
-            // Both requests fired in parallel at the EXACT SAME INSTANT
             Promise.all([
-                sendBookingRequest(p1, 'res1'),
-                sendBookingRequest(p2, 'res2')
+                sendBookingRequest(p1, "res1"),
+                sendBookingRequest(p2, "res2")
             ]);
         }
 
-        // Reset Quota back to 1 seat
+        // Reset quota back to 1 seat
         async function resetTatkalQuota() {
             try {
-                await fetch("http://localhost:8081/api/v1/reset", { method: "POST" });
+                await fetch("/api/v1/reset", { method: "POST" });
                 document.getElementById("res1").style.display = "none";
                 document.getElementById("res2").style.display = "none";
                 alert("✅ Tatkal Quota successfully reset to 1 seat!");
