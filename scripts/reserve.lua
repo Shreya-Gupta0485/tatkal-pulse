@@ -3,9 +3,9 @@ local buyers_key = KEYS[2]
 local passenger_id = ARGV[1]
 local pnr_number = ARGV[2]
 
--- 1. Check if passenger already booked
+-- 1. Check if passenger already booked (duplicate check happens first)
 if redis.call("SISMEMBER", buyers_key, passenger_id) == 1 then
-    return -1 -- Duplicate
+    return -1 -- ALREADY_BOOKED
 end
 
 -- 2. Check remaining Tatkal seats
@@ -15,11 +15,11 @@ if not available_seats or available_seats <= 0 then
     return 0 -- REGRET / Sold Out
 end
 
--- 3. Atomic Allocation (Indivisible)
+-- 3. Atomic allocation: decrement seat and record passenger together
 redis.call("DECR", seat_key)
 redis.call("SADD", buyers_key, passenger_id)
 
--- 4. Hold Seat for 10 minutes (600s) to pay
+-- 4. Store PNR record (auto-expires in 600s). NOTE: this does NOT release the seat.
 redis.call("SETEX", "pnr:" .. pnr_number, 600, passenger_id)
 
-return 1 -- CNF (Confirmed!)
+return 1 -- CONFIRMED
