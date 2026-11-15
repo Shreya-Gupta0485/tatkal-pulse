@@ -1,15 +1,15 @@
 # Tatkal-Pulse // High-Concurrency Seat Booking Engine
 
-A low-latency reservation engine built with **Go (Gin)** and **Redis Lua scripting**, designed to demonstrate how to avoid race conditions and overselling when many users try to book the last seat at the same moment (like the 10:00 AM IRCTC Tatkal release).
+A concurrency demo built with **Go (Gin)** and **Redis Lua scripting**, designed to show how to avoid race conditions and overselling when many users try to book the last seat at the same moment (like the 10:00 AM IRCTC Tatkal release).
 
 > **Scope:** This is a concurrency demo for a single train (`22436`) with a single Tatkal seat. It focuses on the atomic reservation step. It is not a full IRCTC system.
 
 ## ⚡ The Problem: Tatkal Race Conditions
 
-During peak ticketing events, many passengers click "Book Now" at the same millisecond for very few seats.
+During peak ticketing events, many passengers click "Book Now" at nearly the same time for very few seats.
 
 1. **Race conditions:** Two requests read `seats = 1` before either updates it, so both succeed and inventory goes negative (overselling).
-2. **Lock contention:** Locking rows (`SELECT ... FOR UPDATE`) serializes requests, exhausts connection pools and increases tail latency.
+2. **Lock contention:** Locking rows (`SELECT ... FOR UPDATE`) in a relational database serializes requests, can exhaust connection pools and increase tail latency. (This project does not benchmark a SQL approach; this is the general motivation for using Redis.)
 
 ## 🏛️ Architecture (as implemented)
 
@@ -22,27 +22,31 @@ During peak ticketing events, many passengers click "Book Now" at the same milli
                    ▼
         [Redis: executes Lua script atomically]
                    │
-        ┌──────────┴───────────┐
-        ▼                      ▼
- train:<no>:tatkal_seats   train:<no>:passengers
-   (seat counter)            (set of booked names)
+   ┌───────────────┼────────────────┐
+   ▼               ▼                ▼
+train:<no>:     train:<no>:      pnr:<PNR>
+tatkal_seats    passengers       (PNR record,
+(seat counter)  (set of booked   expires in 600s)
+                 names)
 ```
 
 * On startup the server reads `scripts/reserve.lua` and loads it into Redis with `SCRIPT LOAD`, then calls it using `EVALSHA` on every booking.
 * The script receives `KEYS = [seatKey, passengersKey]` and `ARGV = [passenger, pnr]`, and returns one of three codes.
 * Redis runs a Lua script as a single atomic unit, so no other command can interleave while it executes. This is what prevents two requests from both taking the last seat.
 
-| Script result | HTTP status | `status` field   | Meaning                           |
-|---------------|-------------|------------------|-----------------------------------|
-| `1`           | 200         | `CONFIRMED`      | Seat allocated, PNR generated     |
-| `0`           | 409         | `REGRET`         | No seats left                     |
+| Script result | HTTP status | `status` field   | Meaning                            |
+|---------------|-------------|------------------|------------------------------------|
+| `1`           | 200         | `CONFIRMED`      | Seat allocated, PNR generated      |
+| `0`           | 409         | `REGRET`         | No seats left                      |
 | `-1`          | 403         | `ALREADY_BOOKED` | Same passenger name already booked |
+
+**Order of checks inside the script:** the duplicate check runs first, then the seat check. So a passenger who already booked gets `ALREADY_BOOKED` even if the seats are now sold out; a new passenger gets `REGRET`.
 
 ## 🛡️ What This Demo Guarantees
 
 * **No overselling:** The seat check and decrement happen inside one atomic Lua execution.
 * **Duplicate prevention:** A passenger name already stored in the Redis set is rejected with `ALREADY_BOOKED`.
-* **No disk I/O on the booking path:** Everything happens in Redis memory.
+* **No database calls on the booking path:** Everything happens in Redis.
 * **Serialized resolution:** Concurrent requests are resolved one after another inside Redis, in the order Redis receives them. (Order of arrival at Redis depends on network and goroutine scheduling, so this is not a strict real-time FIFO guarantee.)
 
 > Latency numbers shown in the UI are browser round-trip times on localhost. They are not a formal benchmark.
@@ -98,6 +102,8 @@ Both fields are required. A missing field returns `400 {"error": "Invalid bookin
 
 **500** is returned with `{"error": "..."}` if the Redis/script call fails.
 
+> The names in these examples are sample data only. Passenger names always come from the request body.
+
 ### 2. Reset Tatkal Quota
 
 `POST /api/v1/reset`
@@ -117,9 +123,11 @@ Sets `train:22436:tatkal_seats` back to `1` and clears `train:22436:passengers`.
 `frontend/index.html`, styled in a Royal Blue & White palette:
 
 * **Two passenger cards** with empty, editable name inputs and individual **Book** buttons.
-* **"Both click at once"** button that fires both booking requests together using `Promise.all`, so the backend has to resolve the race. Exactly one passenger should get `CONFIRMED` and the other `REGRET`.
+* **"Both click at once"** button that starts both booking requests together using `Promise.all`, so the backend has to resolve the race. With two **different** names, exactly one passenger should get `CONFIRMED` and the other `REGRET`. With the **same** name in both cards, one gets `CONFIRMED` and the other `ALREADY_BOOKED`.
 * **Reset seat** button that calls `/api/v1/reset` to restore the single seat so you can run the test again.
-* Shows round-trip latency for each attempt.
+* Shows browser round-trip latency for each attempt.
+* Uses relative API URLs, so open it through the Go server (`http://localhost:8081/`), not by double-clicking the HTML file.
+* Result boxes are built with `textContent`, so passenger names are never parsed as HTML.
 
 ## 🚀 Quickstart
 
@@ -162,9 +170,14 @@ Then open `http://localhost:8081/`.
 
 ## ⚠️ Current Limitations
 
-* Single hardcoded train (`22436`) in the reset logic and the UI.
+* Single hardcoded train (`22436`) in the reset logic and the UI. The book endpoint accepts any `train_no`, but only `22436` is initialised.
 * Berth is a fixed string (`B1 - Berth 42 (Lower)`), not a real allocation.
-* Duplicate detection is by passenger name only.
+* Duplicate detection is by passenger name only, so two different people with the same name would be treated as one. A real system would key this on a user or account ID.
+* The script also writes a `pnr:<PNR>` key that expires after 600 seconds. This does **not** release the seat; a real HELD → EXPIRED flow is on the roadmap.
+* The `pnr:` key is built inside the script and not passed via `KEYS`, so the script is not Redis-Cluster-safe.
+* The script is loaded only at startup. If Redis restarts or flushes scripts, booking returns `500` until the server is restarted.
+* The reset endpoint is unauthenticated and not atomic (it runs `SET` and `DEL` as two separate commands).
+* The "1-SEAT DEMO" label in the UI is static and does not update after a booking.
 * No database persistence. State lives only in Redis.
 * CORS is open (`*`) for local demo use.
 
@@ -173,5 +186,6 @@ Then open `http://localhost:8081/`.
 * **Full reservation lifecycle:** `HELD` (seat reserved with a TTL) → `CONFIRMED` (after payment) or `EXPIRED` (seat auto-released), plus cancellation.
 * Waiting list (WL) promotion when a confirmed ticket is cancelled.
 * Asynchronous persistence of confirmed bookings to a database via a worker queue.
-* Real berth allocation and multi-train support.
+* Real berth allocation, user accounts and multi-train support.
+* Reload the script automatically on `NOSCRIPT` errors and make reset atomic.
 * Load test (e.g. `k6` / `hey`) to publish real latency numbers.
